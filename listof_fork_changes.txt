@@ -1,0 +1,194 @@
+#######################################
+### shapefile_mod.py changes from orig
+### Karim Bahgat
+#######################################
+# this mod version adds several speed optimizations compared to the pre-mod version, resulting in a combined 5.5x shapereading speed increase at its best (if the user has numpy), or up to 1.5x speed increase for running in pure python (without numpy).
+# there is very little new added code, most of it is just replacing/rewriting old code (except writing from geojson which is new)
+# changed code appear below each linenr and a colon
+# however, linenrs might be slightly off bc I wrote them down manually for each change and thus their linenr might have been moved due to subsequent codechanges that I made. 
+
+
+
+###########
+### CHANGE: import itertools as well as numpy if installed, to be used elsewhere in the script for greater efficiency
+###########
+
+17-21:
+import itertools
+try:
+    import numpy
+except:
+    pass
+
+
+
+###########
+### CHANGE: changed range to xrange out of principle and maybe some speedincrease
+###########
+
+89: 
+return sum(xs[i]*(ys[i+1]-ys[i-1]) for i in xrange(1, len(coords)))/2.0
+
+342:
+record.points = [_Array('d', unpack("<2d", f.read(16))) for p in xrange(nPoints)]
+
+378: 
+for r in xrange(numRecords):
+
+441:
+for field in xrange(numFields):
+
+523:
+for i in xrange(self.numRecords):
+
+866:
+for i in xrange(len(self._shapes)):
+
+953:
+[record.append(recordList[i]) for i in xrange(fieldCount)]
+
+1103:
+for i in range(len(points)):
+
+
+
+###########
+### CHANGE: changed zip to itertools.izip out of principle and maybe some speedincrease
+###########
+
+498: here I also removed alot of unecessary whitespace between ".fields" and "recordContents"
+for (name, typ, size, deci), value in itertools.izip(self.fields, recordContents):
+
+573:
+return [_ShapeRecord(shape=rec[0], record=rec[1]) \
+                        for rec in itertools.izip(self.shapes(), self.records())]
+
+906:
+for (fieldName, fieldType, size, dec), value in itertools.izip(self.fields, record):
+
+
+
+###########
+### CHANGE: Because the f.read(...) method is used very often when reading a shapefile and incurs a method lookup overhead each time (see the official Python Performance Tips website, under "avoiding dots"), I saved the method as a variable "fread" and used the variable containing the method instead of calling the method each time. 
+### NOTE: this small change alone actually gave a 1.5x speed increase when using iterShapes(), and almost 2x speed increase when using iterShapes with numpyspeed enabled (see next change below).
+###########
+
+319: I implemented this optimization only inside the __shape(...) method codeblock
+fread = f.read
+(and then replace all instances of f.read with the fread variable)
+
+
+
+###########
+### CHANGE: added optional numpy shapereading to allow much faster shape reading
+### NOTE1: using numpyspeed makes iterShapes shapereading about 5.5x faster than normal iterShapes reading. 
+### NOTE2: I DID NOT ENABLE numpyspeed FOR .shapes() because users worried about speed should use use iterShapes instead
+###########
+
+421: added numpyspeed arg for faster shapereading defaulting to False, thus making it optional
+def iterShapes(self, numpyspeed=False):
+
+422: updated help description to include numpyspeed option
+"""Serves up shapes in a shapefile as an iterator. Useful
+for handling large shapefiles. The user has the option to set numpyspeed arg to True to allow for
+shapereading speed increase, especially for larger files. This requires numpy."""
+
+429: iterShapes now uses the numpyspeed arg when calling on __shape
+yield self.__shape(numpyspeed=numpyspeed)
+
+305: __shape now inherits the numpyspeed argument from iterShapes arg for individual shape reading.
+def __shape(self, numpyspeed=False):
+
+306-307: described numpy option in help text
+"""Returns the header info and geometry for a single shape.
+Inherits the numpyspeed option from iterShapes, which if set to True allows for much faster shapereading.""""""
+
+330: read parts with numpy if numpyspeed is True
+if nParts:
+    if numpyspeed:
+        record.parts = numpy.fromfile(f, numpy.dtype('<%si' % nParts), 1)
+    else:
+        record.parts = _Array('i', unpack("<%si" % nParts, f.read(nParts * 4)))
+
+338: read points with numpy if numpyspeed is True
+if nPoints:
+    if numpyspeed:
+        record.points = numpy.fromfile(f, numpy.dtype('<2d'), nPoints)
+    else:
+        record.points = [_Array('d', unpack("<2d", f.read(16))) for p in xrange(nPoints)]
+
+392: individual shape retrieval can also make use of numpyspeed
+def shape(self, i=0, numpyspeed=False):
+    """Returns a shape object for a shape in the the geometry
+    record file. Numpyspeed can be set to True for faster shape retrieval. Requires numpy."""
+
+400: read individual shape utilizing numpyspeed
+for j,k in enumerate(self.iterShapes(numpyspeed)):
+
+
+549-552: numpyspeed also for individual shapeRecord retrieval
+def shapeRecord(self, i=0, numpyspeed=False):
+    """Returns a combination geometry and attribute record for the
+    supplied record index. If numpyspeed is set to true will speed up shaperetrieval. This requires numpy."""
+
+
+
+###########
+### CHANGE:
+similar to and independely from the suggested contribution from "kris_neu..." in Issue 58, I created a method to iterate over shapes and records combined using itertools.izip instead of zip, ie a faster version of shapeRecords. It is slightly different than "kris_neu"'s code however because it returns a generator using generator comprehension syntax instead of having to write the iterator manually. Also, the suggested numpyspeed argument is supported in this version. But since "kris_neu" was first it's probably better to accept his contribution if any, and potentially just add my numpyspeed argument on top of that. 
+###########
+
+562-568: added new iterator over shapes and records combined
+def iterShapeRecords(self, numpyspeed=False):
+    """Returns an efficient generator of combination geometry/attribute records for
+    all records in a shapefile. The user has the option to set numpyspeed arg to True to allow for
+    shapereading speed increase, especially for larger files. This requires numpy."""
+    shapeRecords = []
+    return (_ShapeRecord(shape=rec[0], record=rec[1]) \
+                            for rec in itertools.izip(self.shapes(numpyspeed), self.records()) )
+
+
+
+###########
+### CHANGE:
+Added a way to add a new shape with the correct shapeType, points and parts to a shapefile Writer class simply by feeding it a geojson dictionary. This to remedy how despite the "__geo_interface__" recently being added to the main source code to send the geojson representation of a shapefile geometry to other other modules for geometry processing, there was no equvalent convenient method to read and save the geojson version of the resulting shape (e.g. if that shape was intersected/clipped with another shape) or just receive and save entirely new shapes. 
+###########
+
+90-119: added a general function to convert a geojson dictionary to a pyshp shape object for correctly saving it to file. Input has to be a dictionary containing the keys "type" and "coordinates" at its highest level. Though not its intended usage the function can be called directly with shapefile.geojson_to_pyshp(geoj).
+
+def is_dict(v):
+    return isinstance(v, dict)
+
+def geojson_to_pyshp(geoj):
+    """Creates and returns a shape object based on information from a geojson geometry dictionary"""
+    record = _Shape()
+    # See if a geojson dictionary was passed as an argument
+    if is_dict(geoj):
+        record.shapeType = GEOJ_TO_SHAPETYPE[geoj["type"]]
+        #record.bbox = []
+        if geoj["type"] == "Point":
+            record.points = geoj["coordinates"]
+            record.parts = [0]
+        elif geoj["type"] in ("MultiPoint","Linestring"):
+            record.points = geoj["coordinates"]
+            record.parts = [0]
+        elif geoj["type"] in ("Polygon"):
+            record.points = geoj["coordinates"][0]
+            record.parts = [0]
+        elif geoj["type"] in ("MultiPolygon","MultiLineString"):
+            index = 0
+            points = []
+            parts = []
+            for eachmulti in geoj["coordinates"]:
+                points.extend(eachmulti[0])
+                parts.append(index)
+                index += len(eachmulti[0])
+            record.points = points
+            record.parts = parts
+        return record
+
+958: added a method to the Writer class that obtains the results from geojson_to_pyshp converter function to write a new shape. Akin to using the writer.poly/line/point() method, except one does not have to know anything about what type of shape it is or how to format the input. 
+    def write_geoj(self, geoj):
+        """Converts a geojson geometry dictionary and writes its shapefile equivalent"""
+        converted_shape = geojson_to_pyshp(geoj)
+        self._shapes.append(converted_shape)

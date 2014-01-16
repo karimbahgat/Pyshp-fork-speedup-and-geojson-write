@@ -1,0 +1,3 @@
+Same license as original Pyshp module, MIT license.
+
+For license details see original source at http://code.google.com/p/pyshp/
