@@ -1,0 +1,17 @@
+The error happens in shapely.geometry.base.py because the geom_factory catches the input value in an "if not" statement:
+def geom_factory(g, parent=None):
+    # Abstract geometry factory for use with topological methods below
+    if not g:
+        raise ValueError("No Shapely geometry can be created from null value")
+
+The function call and input comes from shapely.ops.py in the line:
+geom_factory(lgeos.methods['cascaded_union'](collection))
+
+"Collection" is the main input for creating the union, is created in the following line:
+collection = lgeos.GEOSGeom_createCollection(6, subs, L)
+
+To determine if there was something wrong with the inputs to collection I added some print statements
+        print subs   --->    <shapely.ops.c_void_p_Array_150 object at 0x0514F850>
+        print L   --->    150 (same as the number of geometry features I was testing)
+        print collection    --->    91389952
+        print lgeos.methods['cascaded_union'](collection)    --->    None (when successful returns another long number just like the "collection" number)

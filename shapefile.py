@@ -378,7 +378,7 @@ class Reader:
                 if nParts > 1:
                     record.parts = record.parts[0]
             else:
-                record.parts = _Array('i', unpack("<%si" % nParts, fread(nParts * 4)))
+                record.parts = unpack("<%si" % nParts, fread(nParts * 4))
         # Read part types for Multipatch - 31
         if shapeType == 31:
             record.partTypes = _Array('i', unpack("<%si" % nParts, fread(nParts * 4)))
@@ -387,7 +387,7 @@ class Reader:
             if numpyspeed:
                 record.points = numpy.fromfile(f, numpy.dtype('<2d'), nPoints)
             else:
-                record.points = [_Array('d', unpack("<2d", fread(16))) for p in xrange(nPoints)]
+                record.points = [unpack("<2d", fread(16)) for p in xrange(nPoints)]
         # Read z extremes and values
         if shapeType in (13,15,18,31):
             (zmin, zmax) = unpack("<2d", fread(16))

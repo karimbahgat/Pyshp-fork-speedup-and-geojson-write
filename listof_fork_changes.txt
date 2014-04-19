@@ -192,3 +192,12 @@ def geojson_to_pyshp(geoj):
         """Converts a geojson geometry dictionary and writes its shapefile equivalent"""
         converted_shape = geojson_to_pyshp(geoj)
         self._shapes.append(converted_shape)
+
+###########
+### CHANGE:
+For normal reading, removed the _Array() functions being run on the unpacked points and parts lists, bc this appeared to slow things down and not sure what good they did. Tested that normal mode still successfully loads shapefiles with expected points and parts.
+###########
+line 381:
+record.parts = unpack("<%si" % nParts, fread(nParts * 4))
+line 390:
+record.points = [unpack("<2d", fread(16)) for p in xrange(nPoints)]
